@@ -38,7 +38,7 @@ int main(int, char**)
         return -1;
     }
 
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
 
     if(renderer == NULL) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, 
@@ -47,7 +47,7 @@ int main(int, char**)
     }
 
     // Load the program ROM
-    FILE* rom_file = fopen("ROMS/test_opcode.ch8", "rb");
+    FILE* rom_file = fopen("ROMS/Sirpinski2.ch8", "rb");
 
     if(rom_file == NULL) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, 

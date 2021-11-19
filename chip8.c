@@ -130,11 +130,14 @@ uint8_t Chip8_ExecInstruction(Chip8_CPU* cpu, Chip8_Memory* mem)
 void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
 {
     TTF_Font* display_font = TTF_OpenFont("data/Consolas.ttf", 20);
+    Chip8_FontAtlas font_atlas = {};
 
     if(display_font == NULL) {
         SDL_Log("Error failed to open TTF_Font: %s\n", TTF_GetError());
         return;
     }
+
+    Chip8_Construct_Font_Atlas(&font_atlas, display_font, renderer);
 
     SDL_Texture* screen_texture = SDL_CreateTexture(renderer,
                                                     SDL_PIXELFORMAT_RGBA8888,
@@ -173,11 +176,19 @@ void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
 
     SDL_Event event;
     bool is_running   = true;
-    bool is_debugging = true;
     uint32_t total_elapsed = 0;
 
+    uint32_t frames = 0;
+    uint32_t total_frames = 0;
+    uint32_t start_fps = SDL_GetTicks();
     while(is_running) {
         uint32_t t_frame_start = SDL_GetTicks();
+
+        if((SDL_GetTicks() - start_fps) >= 1000) {
+            total_frames = frames;
+            frames       = 0;
+            start_fps    = SDL_GetTicks();
+        }
 
         // Fetch
         uint16_t next_inst = Chip8_u16_little_to_big_endian(*((uint16_t*)(mem->main_memory + cpu->PC)));
@@ -187,7 +198,7 @@ void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
         int16_t signal = Chip8_ExecInstruction(cpu, mem);
 
         while(SDL_PollEvent(&event) != 0 || signal != 0xFF) {
-            if(event.type == SDL_QUIT) is_running = false;
+            if(event.type == SDL_QUIT) { is_running = false; break; }
             if((event.type == SDL_KEYDOWN || event.type == SDL_KEYUP)) {
                 int keycode = event.key.keysym.sym;
                 int key_idx = (keycode >= 'a' && keycode <= 'f') ? (keycode - 'a' + 10) :
@@ -201,7 +212,7 @@ void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
                         mem->key_states &= ~(0x8000 >> key_idx);
                 }
 
-                if(signal != 0xFF) {
+                if(signal != 0xFF && key_idx >= 0 && key_idx <= 15) {
                     cpu->VX[signal] = key_idx;
                     signal = 0xFF;
                 }
@@ -233,7 +244,7 @@ void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
         SDL_Rect inst_list_region = {};
         inst_list_region.x = 0;
         inst_list_region.y = 0;
-        inst_list_region.w = info_region.w * 6 / 10; 
+        inst_list_region.w = info_region.w >> 1; 
         inst_list_region.h = info_region.h;
 
         {
@@ -241,8 +252,9 @@ void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
             ctx.renderer   = renderer;
             ctx.font       = display_font;
             ctx.dimensions = inst_list_region;
+            ctx.atlas      = &font_atlas;
 
-            //Chip8_Display_Surrounding_N_Instructions(&ctx, cpu, mem, 7);
+            Chip8_Display_Surrounding_N_Instructions(&ctx, cpu, mem, 6);
         }
 
         SDL_Rect data_info_region = {};
@@ -251,12 +263,27 @@ void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
         data_info_region.w = info_region.w - inst_list_region.w;
         data_info_region.h = info_region.h;
 
+        {
+            Chip8_DisplayContext ctx;
+            ctx.renderer   = renderer;
+            ctx.font       = display_font;
+            ctx.dimensions = data_info_region;
+            ctx.atlas      = &font_atlas;
+
+            Chip8_Display_Register_Contents(&ctx, cpu);
+        }
+
         SDL_RenderDrawRect(renderer, &inst_list_region);
         SDL_RenderDrawRect(renderer, &data_info_region);
         SDL_SetRenderTarget(renderer, NULL);
 
-        SDL_RenderCopy(renderer, screen_texture, NULL, &display_region);
         SDL_RenderCopy(renderer, info_texture, &info_region, &info_region_dest);
+        SDL_RenderCopy(renderer, screen_texture, NULL, &display_region);
+
+        char fps_str[16];
+        snprintf(fps_str, 16, "FPS: %d", total_frames);
+        DrawString(fps_str, info_region.w - 104, display_region.h + info_region.h - 24, &font_atlas, renderer);
+
         SDL_RenderPresent(renderer);
 
         uint32_t t_frame_end = SDL_GetTicks();
@@ -272,9 +299,13 @@ void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
             }
             total_elapsed = 0;
         }
+        frames++;
+        //SDL_Delay(2);
     }
+    SDL_DestroyTexture(font_atlas.texture);
     SDL_DestroyTexture(screen_texture);
     SDL_DestroyTexture(info_texture);
+    TTF_CloseFont(display_font);
 }
 
 void Chip8_Initialize(const uint8_t* program, const size_t size, Chip8_CPU* cpu, Chip8_Memory* mem)
@@ -319,9 +350,9 @@ inline uint16_t Chip8_u16_little_to_big_endian(const uint16_t val)
     return ((val & 0xFF) << 8) | ((val & 0xFF00) >> 8);
 }
 
-uint8_t min(uint8_t val, uint8_t min)
+uint8_t min(uint8_t val, uint8_t val2)
 {
-    return val < min ? min : val;
+    return val < val2 ? val : val2;
 }
 
 // TODO: Cleanup
@@ -397,7 +428,7 @@ void Chip8_Concat_Disassembly(char* buffer, size_t n, uint16_t instr)
 void Chip8_Display_Surrounding_N_Instructions(Chip8_DisplayContext* ctx, Chip8_CPU *cpu, 
                                               Chip8_Memory *mem, int N) 
 {
-    SDL_Color c = { 0xff, 0xff, 0xff, 0xff };
+    //SDL_Color c = { 0xff, 0xff, 0xff, 0xff };
     char output_line[1024];
 
     SDL_SetRenderDrawColor(ctx->renderer, 0x00, 0x00, 0x00, 0xff);
@@ -405,32 +436,152 @@ void Chip8_Display_Surrounding_N_Instructions(Chip8_DisplayContext* ctx, Chip8_C
 
     SDL_SetRenderDrawColor(ctx->renderer, 0xff, 0xff, 0xff, 0xff);
     for(int idx = -N; idx < N + 1; idx++) {
-        uint16_t* inst_addr = (uint16_t*)(mem->main_memory + cpu->PC) + idx;
+        uint16_t* inst_addr = (uint16_t*)(mem->main_memory + cpu->PC) + idx + 1;
         uint16_t  instr     = Chip8_u16_little_to_big_endian(*inst_addr);
 
         int n = snprintf(output_line, 1024, 
-                         "%s %p 0x%04x ", idx == -1 ? ">" : " ", 
-                         inst_addr, instr);
+                         "%s 0x%0x 0x%04x ", idx == -1 ? ">" : " ", 
+                         cpu->PC + ((idx + 1) * 2), instr);
 
         Chip8_Concat_Disassembly(output_line, 1024 - n, instr);
+        
+        int running_x = 10;
 
-        SDL_Surface* text_surface = TTF_RenderText_Solid(ctx->font, output_line, c);
+        for(char* c = output_line; *c != '\0'; c++) { 
+            SDL_Rect* glyph_source = &ctx->atlas->glyph_rects[*c - ' '];
+            SDL_Rect  glyph_dest   = *glyph_source;
 
-        if(text_surface != NULL) {
-            SDL_Texture* text_texture = SDL_CreateTextureFromSurface(ctx->renderer, text_surface);
+            glyph_dest.x = running_x;
+            glyph_dest.w = glyph_source->w;
+            glyph_dest.h = glyph_source->h;
+            glyph_dest.y = 10 + (idx + N) * 19;
 
-            SDL_Rect text_rect;
-            text_rect.x = 10;
-            text_rect.y = 10 + ((idx + N) * 19);
-            text_rect.w = text_surface->w;
-            text_rect.h = text_surface->h;
-
-            if(text_texture != NULL) {
-                SDL_RenderCopy(ctx->renderer, text_texture, NULL, &text_rect);
-                SDL_DestroyTexture(text_texture);
-            }
-            SDL_FreeSurface(text_surface);
+            running_x += glyph_source->w;
+            SDL_RenderCopy(ctx->renderer, ctx->atlas->texture, glyph_source, &glyph_dest);            
         }
+
+        // TODO: keep this for now for future testing
+        //SDL_Surface* text_surface = TTF_RenderText_Solid(ctx->font, output_line, c);
+        //if(text_surface != NULL) {
+        //    SDL_Texture* text_texture = SDL_CreateTextureFromSurface(ctx->renderer, text_surface);
+
+        //    SDL_Rect text_rect;
+        //    text_rect.x = 10;
+        //    text_rect.y = 10 + ((idx + N) * 19);
+        //    text_rect.w = text_surface->w;
+        //    text_rect.h = text_surface->h;
+
+        //    if(text_texture != NULL) {
+        //        SDL_RenderCopy(ctx->renderer, text_texture, NULL, &text_rect);
+        //        SDL_DestroyTexture(text_texture);
+        //    }
+        //    SDL_FreeSurface(text_surface);
+        //}
     }
 }
 
+size_t max(size_t val, size_t val2)
+{
+    return val > val2 ? val : val2;
+}
+
+// TODO: Assume monospaced fonts for now...
+void Chip8_Construct_Font_Atlas(Chip8_FontAtlas* atlas, TTF_Font* font, SDL_Renderer* renderer)
+{
+    if(font == NULL) return;
+
+    size_t running_width  = 0;
+    size_t maximum_height = 0;
+
+    // 1: Determine the total size of the texture to store based on the sizes of each glyph
+    int height = TTF_FontAscent(font) - TTF_FontDescent(font);
+    for(size_t idx = 0; idx < NUM_GLYPHS; idx++) {
+        int min_x, max_x, min_y, max_y, advance;
+        if(TTF_GlyphMetrics(font, ' ' + idx, &min_x, &max_x, &min_y, &max_y, &advance) == -1) {
+            SDL_Log("Could not get glyph metrics for: %s", TTF_GetError());
+        }
+
+        SDL_Rect* rect = &atlas->glyph_rects[idx];
+        rect->x = running_width;
+        rect->y = 0;
+        rect->w = advance;
+        rect->h = height;
+
+        running_width += advance;
+        maximum_height = max(maximum_height, height);
+    }
+    atlas->atlas_w = running_width;
+    atlas->atlas_h = maximum_height;
+    atlas->texture = SDL_CreateTexture(renderer,
+                                       SDL_PIXELFORMAT_RGBA8888,
+                                       SDL_TEXTUREACCESS_TARGET,
+                                       running_width, maximum_height);
+
+    SDL_SetRenderTarget(renderer, atlas->texture);
+
+    SDL_Color color = { 0xff, 0xff, 0xff, 0xff };
+    for(size_t idx = 0; idx < NUM_GLYPHS; idx++) {
+        const char letter[2] = { (char)(' ' + idx), '\0' };
+
+        SDL_Surface* glyph_surface =  TTF_RenderText_Blended(font, letter, color);
+        if(glyph_surface != NULL) {
+            SDL_Texture* glyph_texture = SDL_CreateTextureFromSurface(renderer, glyph_surface);
+            SDL_Rect* pos_within_atlas = &atlas->glyph_rects[idx];
+
+            if(glyph_texture != NULL) {
+                SDL_RenderCopy(renderer, glyph_texture, NULL, pos_within_atlas);
+                SDL_DestroyTexture(glyph_texture);
+            }
+            SDL_FreeSurface(glyph_surface);
+        }
+    }
+    SDL_SetRenderTarget(renderer, NULL);
+}
+
+void DrawString(const char* str, const int x, const int y, Chip8_FontAtlas* atlas, SDL_Renderer* r)
+{
+    int running_x = x;
+
+    for(const char* c = str; *c != '\0'; c++) { 
+        SDL_Rect* glyph_source = &atlas->glyph_rects[*c - ' '];
+        SDL_Rect  glyph_dest   = *glyph_source;
+
+        glyph_dest.x = running_x;
+        glyph_dest.w = glyph_source->w;
+        glyph_dest.h = glyph_source->h;
+        glyph_dest.y = y;
+
+        running_x += glyph_source->w;
+        SDL_RenderCopy(r, atlas->texture, glyph_source, &glyph_dest);            
+    }
+
+}
+
+void Chip8_Display_Register_Contents(Chip8_DisplayContext* ctx, Chip8_CPU* cpu)
+{
+    char register_str[16];
+    for(int i = 0; i < 16; i++) {
+
+        int x = ctx->dimensions.x + ((i % 4) * ctx->dimensions.w / 4) + 12;
+        int y = ctx->dimensions.y + ((i / 4) * 20) + 8;
+
+        snprintf(register_str, 16, "v%x: 0x%02x", i, cpu->VX[i]);
+        DrawString(register_str, x, y, ctx->atlas, ctx->renderer);
+    }
+
+    // TODO: cleanup
+    snprintf(register_str, 16, "dt: 0x%02x", cpu->delay_timer);
+    DrawString(register_str, ctx->dimensions.x + 12, 88, ctx->atlas, ctx->renderer);
+
+    snprintf(register_str, 16, "st: 0x%02x", cpu->sound_timer);
+    DrawString(register_str, ctx->dimensions.x + (ctx->dimensions.w / 4) + 12, 88, ctx->atlas, ctx->renderer);
+
+    snprintf(register_str, 16, "I : 0x%02x", cpu->I);
+    DrawString(register_str, ctx->dimensions.x + (2 * ctx->dimensions.w / 4) + 12, 88, ctx->atlas, ctx->renderer);
+
+    snprintf(register_str, 16, "PC: 0x%02x", cpu->PC);
+    DrawString(register_str, ctx->dimensions.x + (3 * ctx->dimensions.w / 4) + 12, 88, ctx->atlas, ctx->renderer);
+
+    snprintf(register_str, 16, "IR: 0x%04x", cpu->CIR);
+    DrawString(register_str, ctx->dimensions.x + 12, 108, ctx->atlas, ctx->renderer);
+}

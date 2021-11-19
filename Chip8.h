@@ -14,7 +14,7 @@
 static const uint32_t CHIP8_TIMER_PERIOD       = 1000 / 60; // 60hz to decrement delay timer and sound timer
 static const uint32_t CHIP8_SCREEN_WIDTH       = 64;
 static const uint32_t CHIP8_SCREEN_HEIGHT      = 32;
-static const uint32_t CHIP8_SCREEN_SCALE       = 10;
+static const uint32_t CHIP8_SCREEN_SCALE       = 15;
 static const uint32_t CHIP8_INFO_REGION_HEIGHT = 300;
 
 typedef struct CHIP8MEMORY {
@@ -40,10 +40,21 @@ typedef struct CHIP8CPU {
 } Chip8_CPU;
 
 // Used for diplaying information
+#define NUM_GLYPHS ('~' - ' ')
+
+typedef struct CHIP8FONTATLAS {
+    TTF_Font*    font;
+    SDL_Rect     glyph_rects[NUM_GLYPHS];
+    SDL_Texture* texture;
+    size_t       atlas_w;
+    size_t       atlas_h;
+} Chip8_FontAtlas;
+
 typedef struct CHIP8DISPLAYCONTEXT {
     SDL_Renderer* renderer;
     TTF_Font*     font;
     SDL_Rect      dimensions;
+    Chip8_FontAtlas* atlas;
 } Chip8_DisplayContext;
 
 // Only Chip8_Execute0xF for now returns a possible value (signal) if execution needs to
@@ -59,8 +70,12 @@ void Chip8_Initialize(const uint8_t* program, const size_t size, Chip8_CPU* cpu,
 void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer);
 uint16_t Chip8_u16_little_to_big_endian(const uint16_t val);
 uint8_t min(uint8_t val, uint8_t min);
+size_t  max(size_t val, size_t max);
 
 // Display Related functions
+void Chip8_Display_Register_Contents(Chip8_DisplayContext* ctx, Chip8_CPU* cpu);
 void Chip8_Display_Surrounding_N_Instructions(Chip8_DisplayContext* ctx, Chip8_CPU *cpu, Chip8_Memory *mem, int N);
+void Chip8_Construct_Font_Atlas(Chip8_FontAtlas* atlas, TTF_Font* font, SDL_Renderer*);
+void DrawString(const char* str, const int x, const int y, Chip8_FontAtlas* atlas, SDL_Renderer* r);
 
 #endif
