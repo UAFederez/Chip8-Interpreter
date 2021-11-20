@@ -1,6 +1,6 @@
 #include "Chip8.h"
 
-uint8_t Chip8_Execute0xF(Chip8_CPU* cpu, Chip8_Memory* mem, uint8_t reg_x, uint8_t nn)
+uint8_t Execute0xF(Chip8_CPU* cpu, Chip8_Memory* mem, uint8_t reg_x, uint8_t nn)
 {
     switch(nn) {
         case 0x07: cpu->VX[reg_x] = cpu->delay_timer; break;
@@ -10,17 +10,17 @@ uint8_t Chip8_Execute0xF(Chip8_CPU* cpu, Chip8_Memory* mem, uint8_t reg_x, uint8
         case 0x1e: cpu->I += cpu->VX[reg_x]; break;
         case 0x29: cpu->I = (cpu->VX[reg_x] * 5); break;
         case 0x33: {
-            mem->main_memory[cpu->I + 0] = cpu->VX[reg_x] / 100;
-            mem->main_memory[cpu->I + 1] = cpu->VX[reg_x] / 10 % 10;
-            mem->main_memory[cpu->I + 2] = cpu->VX[reg_x] % 10;
+            mem->ptr_8[cpu->I + 0] = cpu->VX[reg_x] / 100;
+            mem->ptr_8[cpu->I + 1] = cpu->VX[reg_x] / 10 % 10;
+            mem->ptr_8[cpu->I + 2] = cpu->VX[reg_x] % 10;
         } break;
-        case 0x55: memcpy(mem->main_memory + cpu->I, cpu->VX, reg_x + 1); break;
-        case 0x65: memcpy(cpu->VX, mem->main_memory + cpu->I, reg_x + 1); break;
+        case 0x55: memcpy(mem->ptr_8 + cpu->I, cpu->VX, reg_x + 1); break;
+        case 0x65: memcpy(cpu->VX, mem->ptr_8 + cpu->I, reg_x + 1); break;
     }
     return 0xFF;
 }
 
-uint8_t Chip8_Execute0xE(Chip8_CPU* cpu, Chip8_Memory* mem, uint8_t nn, uint8_t reg_x)
+uint8_t Execute0xE(Chip8_CPU* cpu, Chip8_Memory* mem, uint8_t nn, uint8_t reg_x)
 {
     switch(nn) {
         case 0x9e: { if(mem->key_states & (0x8000 >> reg_x)) cpu->PC += 2; } break;
@@ -29,10 +29,10 @@ uint8_t Chip8_Execute0xE(Chip8_CPU* cpu, Chip8_Memory* mem, uint8_t nn, uint8_t 
     return 0;
 }
 
-uint8_t Chip8_Execute0xD(Chip8_CPU* cpu, Chip8_Memory* mem, uint8_t reg_x, uint8_t reg_y, uint8_t height)
+uint8_t Execute0xD(Chip8_CPU* cpu, Chip8_Memory* mem, uint8_t reg_x, uint8_t reg_y, uint8_t height)
 {
     uint16_t pixel_offset = (cpu->VX[reg_y] % 32) * mem->screen_w + (cpu->VX[reg_x] % 64);
-    uint8_t* sprite_addr  = mem->main_memory + cpu->I;
+    uint8_t* sprite_addr  = mem->ptr_8 + cpu->I;
     uint8_t* screen_addr  = mem->screen_buffer + pixel_offset;
 
     uint8_t collision = 0x00;
@@ -51,7 +51,7 @@ uint8_t Chip8_Execute0xD(Chip8_CPU* cpu, Chip8_Memory* mem, uint8_t reg_x, uint8
     return 0;
 }
 
-uint8_t Chip8_Execute0x8(Chip8_CPU* cpu, uint8_t reg_x, uint8_t reg_y, uint8_t type) 
+uint8_t Execute0x8(Chip8_CPU* cpu, uint8_t reg_x, uint8_t reg_y, uint8_t type) 
 {
     switch(type) {
         case 0x00: cpu->VX[reg_x]  = cpu->VX[reg_y]; break;
@@ -82,16 +82,16 @@ uint8_t Chip8_Execute0x8(Chip8_CPU* cpu, uint8_t reg_x, uint8_t reg_y, uint8_t t
     return 0;
 }
 
-uint8_t Chip8_Execute0x0(Chip8_CPU* cpu, Chip8_Memory* mem, uint16_t nnn)
+uint8_t Execute0x0(Chip8_CPU* cpu, Chip8_Memory* mem, uint16_t nnn)
 {
     switch(nnn) {
         case 0x0E0: memset(mem->screen_buffer, 0x00, mem->screen_w * mem->screen_h); break;
-        case 0x0EE: cpu->PC = *(mem->ptr_stack++); break;
+        case 0x0EE: cpu->PC = mem->ptr_16[cpu->stack_ptr++]; break;
     }
     return 0;
 }
 
-uint8_t Chip8_ExecInstruction(Chip8_CPU* cpu, Chip8_Memory* mem)
+uint8_t ExecInstruction(Chip8_CPU* cpu, Chip8_Memory* mem)
 {
     // 'Decode'
     uint16_t opcode = (cpu->CIR & 0xF000) >> 12; 
@@ -105,29 +105,28 @@ uint8_t Chip8_ExecInstruction(Chip8_CPU* cpu, Chip8_Memory* mem)
 
     // Execute
     switch(opcode) {
-        case 0x0: Chip8_Execute0x0(cpu, mem, nnn); break; 
+        case 0x0: Execute0x0(cpu, mem, nnn); break; 
         case 0x1: cpu->PC = nnn; break;
-        case 0x2: *(--mem->ptr_stack) = cpu->PC; cpu->PC = nnn; break;
+        case 0x2: mem->ptr_16[--cpu->stack_ptr] = cpu->PC; cpu->PC = nnn; break;
         case 0x3: cpu->PC += (2 * (cpu->VX[reg_x] == nn)); break;
         case 0x4: cpu->PC += (2 * (cpu->VX[reg_x] != nn)); break;
         case 0x5: cpu->PC += (2 * (cpu->VX[reg_x] == cpu->VX[reg_y])); break;
         case 0x6: cpu->VX[reg_x]  = nn; break;
         case 0x7: cpu->VX[reg_x] += nn; break;
-        case 0x8: Chip8_Execute0x8(cpu, reg_x, reg_y, optype); break;
+        case 0x8: Execute0x8(cpu, reg_x, reg_y, optype); break;
         case 0x9: cpu->PC += (2 * (cpu->VX[reg_x] != cpu->VX[reg_y])); break;
         case 0xa: cpu->I = nnn; break;
         case 0xb: cpu->PC = nnn + cpu->VX[0]; break;
         case 0xc: cpu->VX[reg_x] = (rand() % 255) & nn; break;
-        case 0xd: Chip8_Execute0xD(cpu, mem, reg_x, reg_y, optype); break;
-        case 0xe: Chip8_Execute0xE(cpu, mem, nn, reg_x); break;
-        case 0xf: wait_key = Chip8_Execute0xF(cpu, mem, reg_x, nn); break;
+        case 0xd: Execute0xD(cpu, mem, reg_x, reg_y, optype); break;
+        case 0xe: Execute0xE(cpu, mem, nn, reg_x); break;
+        case 0xf: wait_key = Execute0xF(cpu, mem, reg_x, nn); break;
         default: break;
     }
     return wait_key;
 }
 
-
-void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
+void RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
 {
     TTF_Font* display_font = TTF_OpenFont("data/Consolas.ttf", 20);
     Chip8_FontAtlas font_atlas = {};
@@ -137,7 +136,7 @@ void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
         return;
     }
 
-    Chip8_Construct_Font_Atlas(&font_atlas, display_font, renderer);
+    ConstructFontAtlas(&font_atlas, display_font, renderer);
 
     SDL_Texture* screen_texture = SDL_CreateTexture(renderer,
                                                     SDL_PIXELFORMAT_RGBA8888,
@@ -191,11 +190,12 @@ void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
         }
 
         // Fetch
-        uint16_t next_inst = Chip8_u16_little_to_big_endian(*((uint16_t*)(mem->main_memory + cpu->PC)));
+        uint8_t* inst_addr = mem->ptr_8 + cpu->PC;
+        uint16_t next_inst = ((uint16_t) inst_addr[0]) << 8 | inst_addr[1];
         cpu->CIR = next_inst;
         cpu->PC += 2;
 
-        int16_t signal = Chip8_ExecInstruction(cpu, mem);
+        int16_t signal = ExecInstruction(cpu, mem);
 
         while(SDL_PollEvent(&event) != 0 || signal != 0xFF) {
             if(event.type == SDL_QUIT) { is_running = false; break; }
@@ -254,7 +254,7 @@ void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
             ctx.dimensions = inst_list_region;
             ctx.atlas      = &font_atlas;
 
-            Chip8_Display_Surrounding_N_Instructions(&ctx, cpu, mem, 6);
+            DisplaySurroundingInstructions(&ctx, cpu, mem, 6);
         }
 
         SDL_Rect data_info_region = {};
@@ -270,7 +270,7 @@ void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
             ctx.dimensions = data_info_region;
             ctx.atlas      = &font_atlas;
 
-            Chip8_Display_Register_Contents(&ctx, cpu);
+            DisplayCPUAndMemoryContents(&ctx, cpu, mem);
         }
 
         SDL_RenderDrawRect(renderer, &inst_list_region);
@@ -300,7 +300,6 @@ void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
             total_elapsed = 0;
         }
         frames++;
-        //SDL_Delay(2);
     }
     SDL_DestroyTexture(font_atlas.texture);
     SDL_DestroyTexture(screen_texture);
@@ -308,7 +307,7 @@ void Chip8_RunProgram(Chip8_CPU* cpu, Chip8_Memory* mem, SDL_Renderer* renderer)
     TTF_CloseFont(display_font);
 }
 
-void Chip8_Initialize(const uint8_t* program, const size_t size, Chip8_CPU* cpu, Chip8_Memory* mem)
+void Initialize(const uint8_t* program, const size_t size, Chip8_CPU* cpu, Chip8_Memory* mem)
 {
     // Initialize memory
     mem->memory_size  = 4096;
@@ -317,9 +316,9 @@ void Chip8_Initialize(const uint8_t* program, const size_t size, Chip8_CPU* cpu,
     mem->stack_size   = 24; // 2 bytes per address, means 12 successive function calls
 
     // Allocate the memory
-    mem->ptr_stack     = (uint16_t*)(mem->main_memory + mem->memory_size);
+    cpu->stack_ptr    = mem->memory_size >> 1;
 
-    memset(mem->main_memory,   0x00, mem->memory_size);
+    memset(mem->ptr_8,   0x00, mem->memory_size);
     memset(mem->screen_buffer, 0x00, mem->screen_w * mem->screen_h);
 
     // Write the system font
@@ -333,10 +332,10 @@ void Chip8_Initialize(const uint8_t* program, const size_t size, Chip8_CPU* cpu,
         { 0xF0, 0x80, 0x80, 0x80, 0xF0 }, { 0xE0, 0x90, 0x90, 0x90, 0xE0 }, // C, D
         { 0xF0, 0x80, 0xF0, 0x80, 0xF0 }, { 0xF0, 0x80, 0xF0, 0x80, 0x80 }, // E, F
     };
-    memcpy(mem->main_memory, system_font, 16 * 5);
+    memcpy(mem->ptr_8, system_font, 16 * 5);
 
     // Chip-8 Programs are specified to start at 0x200
-    memcpy(mem->main_memory + 0x200, program, size);
+    memcpy(mem->ptr_8 + 0x200, program, size);
 
     // Initialize the CPU
     memset(cpu->VX, 0x00, 16);   // zero-initialize the registers
@@ -345,7 +344,7 @@ void Chip8_Initialize(const uint8_t* program, const size_t size, Chip8_CPU* cpu,
     cpu->delay_timer = 0x00;
 }
 
-inline uint16_t Chip8_u16_little_to_big_endian(const uint16_t val)
+inline uint16_t LittleToBigEndianU16(const uint16_t val)
 {
     return ((val & 0xFF) << 8) | ((val & 0xFF00) >> 8);
 }
@@ -360,7 +359,6 @@ void Chip8_Concat_Disassembly(char* buffer, size_t n, uint16_t instr)
 {
     char instr_disassembly[1024] = {};
 
-    // 'Decode'
     uint16_t opcode = (instr & 0xF000) >> 12; 
     uint16_t nnn    = (instr & 0x0FFF);       // Lower 3 nibbles, typically an address operand
     uint8_t  nn     = (instr & 0x00FF);       // Lower byte, typically a byte literal
@@ -368,7 +366,6 @@ void Chip8_Concat_Disassembly(char* buffer, size_t n, uint16_t instr)
     uint8_t  reg_y  = (instr & 0x00F0) >> 4;  // typically a register index
     uint8_t  optype = (instr & 0x000F);       // nibble which differentiates inst's with same opcode
 
-    // Execute
     switch(opcode) {
         case 0x0: {
             switch(nnn) {
@@ -376,12 +373,12 @@ void Chip8_Concat_Disassembly(char* buffer, size_t n, uint16_t instr)
                 case 0x0EE: snprintf(instr_disassembly, n, "ret"); break;
             }
         } break; 
-        case 0x1: snprintf(instr_disassembly, n, "jmp 0x%x", nnn);                 break;
-        case 0x2: snprintf(instr_disassembly, n, "call 0x%x", nnn);                break;
-        case 0x3: snprintf(instr_disassembly, n, "skipeq v%x, 0x%x", reg_x, nn);   break;
-        case 0x4: snprintf(instr_disassembly, n, "skipneq v%x, 0x%x", reg_x, nn);  break;
+        case 0x1: snprintf(instr_disassembly, n, "jmp 0x%03x", nnn);                 break;
+        case 0x2: snprintf(instr_disassembly, n, "call 0x%03x", nnn);                break;
+        case 0x3: snprintf(instr_disassembly, n, "skipeq v%x, 0x%02x", reg_x, nn);   break;
+        case 0x4: snprintf(instr_disassembly, n, "skipneq v%x, 0x%02x", reg_x, nn);  break;
         case 0x5: snprintf(instr_disassembly, n, "skipeq v%x, v%x", reg_x, reg_y); break;
-        case 0x6: snprintf(instr_disassembly, n, "mov v%x, %x", reg_x, nn);        break;
+        case 0x6: snprintf(instr_disassembly, n, "mov v%x, 0x%02x", reg_x, nn);        break;
         case 0x7: snprintf(instr_disassembly, n, "add v%x, v%x", reg_x, reg_y);    break;
         case 0x8: {
             switch(optype) {
@@ -397,10 +394,10 @@ void Chip8_Concat_Disassembly(char* buffer, size_t n, uint16_t instr)
             }
         } break;
         case 0x9: snprintf(instr_disassembly, n, "skipneq v%x, v%x", reg_x, reg_y);  break;
-        case 0xa: snprintf(instr_disassembly, n, "mov I, %x", nnn);  break;
-        case 0xb: snprintf(instr_disassembly, n, "jmp v0, %x", nnn);  break;
-        case 0xc: snprintf(instr_disassembly, n, "rnd v%x, %x", reg_x, nn);  break;
-        case 0xd: snprintf(instr_disassembly, n, "drw v%x, v%x, %x", reg_x, reg_y, optype);  break;
+        case 0xa: snprintf(instr_disassembly, n, "mov I, 0x%03x", nnn);  break;
+        case 0xb: snprintf(instr_disassembly, n, "jmp v0, 0x%03x", nnn);  break;
+        case 0xc: snprintf(instr_disassembly, n, "rnd v%x, 0x%02x", reg_x, nn);  break;
+        case 0xd: snprintf(instr_disassembly, n, "drw v%x, v%x, 0x%02x", reg_x, reg_y, optype);  break;
         case 0xe: {
             switch(nn) {
                 case 0x9e: snprintf(instr_disassembly, n, "skp v%x", reg_x);  break;
@@ -409,7 +406,7 @@ void Chip8_Concat_Disassembly(char* buffer, size_t n, uint16_t instr)
         }  break;
         case 0xf: {
             switch(nn) {
-                case 0x07: snprintf(instr_disassembly, n, "mov dt, %x", reg_x); break;
+                case 0x07: snprintf(instr_disassembly, n, "mov dt, v%02x", reg_x); break;
                 case 0x0a: snprintf(instr_disassembly, n, "intk v%x", reg_x); break;
                 case 0x15: snprintf(instr_disassembly, n, "mov dt, v%x", reg_x); break;
                 case 0x18: snprintf(instr_disassembly, n, "mov st, v%x", reg_x); break;
@@ -425,8 +422,8 @@ void Chip8_Concat_Disassembly(char* buffer, size_t n, uint16_t instr)
     strncat (buffer, instr_disassembly, n);
 }
 
-void Chip8_Display_Surrounding_N_Instructions(Chip8_DisplayContext* ctx, Chip8_CPU *cpu, 
-                                              Chip8_Memory *mem, int N) 
+void DisplaySurroundingInstructions(Chip8_DisplayContext* ctx, Chip8_CPU *cpu, 
+                                    Chip8_Memory *mem, int N) 
 {
     //SDL_Color c = { 0xff, 0xff, 0xff, 0xff };
     char output_line[1024];
@@ -436,12 +433,11 @@ void Chip8_Display_Surrounding_N_Instructions(Chip8_DisplayContext* ctx, Chip8_C
 
     SDL_SetRenderDrawColor(ctx->renderer, 0xff, 0xff, 0xff, 0xff);
     for(int idx = -N; idx < N + 1; idx++) {
-        uint16_t* inst_addr = (uint16_t*)(mem->main_memory + cpu->PC) + idx + 1;
-        uint16_t  instr     = Chip8_u16_little_to_big_endian(*inst_addr);
+        uint16_t* inst_addr = (uint16_t*)(mem->ptr_8 + cpu->PC) + idx + 1;
+        uint16_t  instr     = LittleToBigEndianU16(*inst_addr);
 
         int n = snprintf(output_line, 1024, 
-                         "%s 0x%0x 0x%04x ", idx == -1 ? ">" : " ", 
-                         cpu->PC + ((idx + 1) * 2), instr);
+                         "%s 0x%0x 0x%04x ", idx == -2 ? ">" : " ", cpu->PC + ((idx + 1) * 2), instr);
 
         Chip8_Concat_Disassembly(output_line, 1024 - n, instr);
         
@@ -486,7 +482,7 @@ size_t max(size_t val, size_t val2)
 }
 
 // TODO: Assume monospaced fonts for now...
-void Chip8_Construct_Font_Atlas(Chip8_FontAtlas* atlas, TTF_Font* font, SDL_Renderer* renderer)
+void ConstructFontAtlas(Chip8_FontAtlas* atlas, TTF_Font* font, SDL_Renderer* renderer)
 {
     if(font == NULL) return;
 
@@ -557,7 +553,7 @@ void DrawString(const char* str, const int x, const int y, Chip8_FontAtlas* atla
 
 }
 
-void Chip8_Display_Register_Contents(Chip8_DisplayContext* ctx, Chip8_CPU* cpu)
+void DisplayCPUAndMemoryContents(Chip8_DisplayContext* ctx, Chip8_CPU* cpu, Chip8_Memory* mem)
 {
     char register_str[16];
     for(int i = 0; i < 16; i++) {
@@ -584,4 +580,17 @@ void Chip8_Display_Register_Contents(Chip8_DisplayContext* ctx, Chip8_CPU* cpu)
 
     snprintf(register_str, 16, "IR: 0x%04x", cpu->CIR);
     DrawString(register_str, ctx->dimensions.x + 12, 108, ctx->atlas, ctx->renderer);
+
+    snprintf(register_str, 16, "SP: 0x%04x", cpu->stack_ptr << 1);
+    DrawString(register_str, ctx->dimensions.x + (ctx->dimensions.w / 4) + 12, 108, ctx->atlas, ctx->renderer);
+
+    for(int i = 0; i < 16; i++) {
+        if(mem->ptr_8 + cpu->I + i > mem->ptr_8 + mem->memory_size)
+            break;
+        int x = ctx->dimensions.x + ((i % 4) * ctx->dimensions.w / 4) + 8;
+        int y = ctx->dimensions.y + 148 + ((i / 4) * 20) + 8;
+
+        snprintf(register_str, 16, "[%2d]:0x%02x", i, mem->ptr_8[cpu->I + i]);
+        DrawString(register_str, x, y, ctx->atlas, ctx->renderer);
+    }
 }

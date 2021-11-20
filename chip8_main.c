@@ -47,7 +47,7 @@ int main(int, char**)
     }
 
     // Load the program ROM
-    FILE* rom_file = fopen("ROMS/Sirpinski2.ch8", "rb");
+    FILE* rom_file = fopen("ROMS/Kaleidoscope.ch8", "rb");
 
     if(rom_file == NULL) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, 
@@ -70,11 +70,11 @@ int main(int, char**)
     uint8_t stack_memory [4096];
     uint8_t stack_screen_buffer [CHIP8_SCREEN_WIDTH * CHIP8_SCREEN_HEIGHT];
 
-    memory.main_memory   = stack_memory;
+    memory.ptr_8         = stack_memory;
     memory.screen_buffer = stack_screen_buffer;
 
-    Chip8_Initialize(program, rom_size, &cpu, &memory);
-    Chip8_RunProgram(&cpu, &memory, renderer);
+    Initialize(program, rom_size, &cpu, &memory);
+    RunProgram(&cpu, &memory, renderer);
 
     // Cleanup
     free(program);

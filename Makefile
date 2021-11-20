@@ -1,4 +1,4 @@
-CC  = gcc
+CC  = clang
 SRC = chip8.c \
 	  chip8_main.c
 
